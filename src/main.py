@@ -1,6 +1,7 @@
 import asyncio
 import html
 import os
+import re
 import subprocess
 
 import psutil
@@ -46,14 +47,32 @@ def get_server_stats():
 def get_logins():
     try:
         out = subprocess.run(
-            ["journalctl", "-u", "ssh", "-u", "sshd", "--since", "24 hours ago", "-n", "10", "--no-pager"],
+            ["journalctl", "-u", "ssh", "-u", "sshd", "--since", "24 hours ago", "--no-pager"],
             capture_output=True,
             text=True,
-            timeout=10,
-        ).stdout.strip()
-        return html.escape(out) if out else "No sshd entries in the last 24h"
+            timeout=20,
+        ).stdout
     except Exception as e:
         return f"Logins unavailable: {e}"
+
+    brute = re.compile(r"Failed password|Invalid user|Connection closed by authenticating user", re.I)
+    ips = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+    counter = {}
+    for line in out.splitlines():
+        if brute.search(line):
+            for ip in ips.findall(line):
+                counter[ip] = counter.get(ip, 0) + 1
+
+    if not counter:
+        return "No brute-force attempts in the last 24h"
+    top = "\n".join(
+        f"{html.escape(ip)} — {n}"
+        for ip, n in sorted(counter.items(), key=lambda i: -i[1])[:5]
+    )
+    return (
+        f"🛡 Brute-force attempts (24h): {sum(counter.values())} from {len(counter)} IPs\n"
+        f"Top sources:\n{top}"
+    )
 
 
 async def send_stats():
