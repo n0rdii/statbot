@@ -28,8 +28,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /opt/bots/statbot
-            curl -LsSf https://astral.sh/uv/install.sh | sh
+            set -e
+            curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
             export PATH="$HOME/.local/bin:$PATH"
-            UV_PROJECT_ENVIRONMENT=venv uv sync
+            cd /opt/bots/statbot
+            uv sync -p 3.13
             systemctl restart statbot
