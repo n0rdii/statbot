@@ -8,7 +8,9 @@ You can also ask it directly:
 
 - `/stats` — same report, right now
 - `/logins` — brute-force activity: how many failed attempts there were in the
-  last 24 hours and from which IPs (top 5)
+  last 24 hours, from how many IPs, with an hourly chart attached
+
+The hourly report carries the same chart as a photo.
 
 Both only work for the admin user (the one from `ADMIN_ID`), everyone else gets
 ignored. The journal lines contain IPs of random people trying to brute-force the
