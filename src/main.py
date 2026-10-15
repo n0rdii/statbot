@@ -1,14 +1,20 @@
 import asyncio
-import html
+import datetime
+import io
 import os
 import re
 import subprocess
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 import psutil
 import docker
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, BufferedInputFile
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 
@@ -44,40 +50,59 @@ def get_server_stats():
     )
 
 
-def get_logins():
+def build_graph(per_hour: dict):
+    now = datetime.datetime.now()
+    hours = [now - datetime.timedelta(hours=k) for k in range(23, -1, -1)]
+    counts = [per_hour.get(h.strftime("%Y-%m-%dT%H"), 0) for h in hours]
+    fig, ax = plt.subplots(figsize=(10, 2.6), dpi=100)
+    ax.bar(range(len(counts)), counts, color="#d64545")
+    ax.set_xticks(range(len(counts)))
+    ax.set_xticklabels([h.strftime("%H") for h in hours], fontsize=7)
+    ax.set_title("Failed ssh attempts, last 24h", fontsize=9)
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def get_bruteforce():
     try:
         out = subprocess.run(
-            ["journalctl", "-u", "ssh", "-u", "sshd", "--since", "24 hours ago", "--no-pager"],
+            ["journalctl", "-u", "ssh", "-u", "sshd", "--since", "24 hours ago", "--no-pager", "-o", "short-iso"],
             capture_output=True,
             text=True,
             timeout=20,
         ).stdout
     except Exception as e:
-        return f"Logins unavailable: {e}"
+        return f"Logins unavailable: {e}", None
 
     brute = re.compile(r"Failed password|Invalid user|Connection closed by authenticating user", re.I)
     ips = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
-    counter = {}
+    per_hour = {}
+    unique_ips = set()
+    total = 0
     for line in out.splitlines():
         if brute.search(line):
-            for ip in ips.findall(line):
-                counter[ip] = counter.get(ip, 0) + 1
+            total += 1
+            per_hour[line[:13]] = per_hour.get(line[:13], 0) + 1
+            unique_ips.update(ips.findall(line))
 
-    if not counter:
-        return "No brute-force attempts in the last 24h"
-    top = "\n".join(
-        f"{html.escape(ip)} — {n}"
-        for ip, n in sorted(counter.items(), key=lambda i: -i[1])[:5]
-    )
+    if not total:
+        return "No brute-force attempts in the last 24h", None
     return (
-        f"🛡 Brute-force attempts (24h): {sum(counter.values())} from {len(counter)} IPs\n"
-        f"Top sources:\n{top}"
+        f"🛡 Brute-force attempts (24h): {total} from {len(unique_ips)} IPs",
+        build_graph(per_hour),
     )
 
 
 async def send_stats():
-    text = f"{get_server_stats()}\n\n🔑 <b>Recent SSH events (24h)</b>\n{get_logins()}"
-    await bot.send_message(chat_id=str(ADMIN_ID), text=text, parse_mode="HTML")
+    text, png = get_bruteforce()
+    report = f"{get_server_stats()}\n\n{text}"
+    if png:
+        await bot.send_photo(chat_id=str(ADMIN_ID), photo=BufferedInputFile(png, filename="bruteforce.png"), caption=report)
+    else:
+        await bot.send_message(chat_id=str(ADMIN_ID), text=report)
 
 
 def admin_only(message: Message):
@@ -95,7 +120,11 @@ async def cmd_stats(message: Message):
 async def cmd_logins(message: Message):
     if not admin_only(message):
         return
-    await message.answer(get_logins())
+    text, png = get_bruteforce()
+    if png:
+        await message.answer_photo(BufferedInputFile(png, filename="bruteforce.png"), caption=text)
+    else:
+        await message.answer(text)
 
 
 async def main():
