@@ -100,7 +100,7 @@ async def send_stats():
     text, png = get_bruteforce()
     report = f"{get_server_stats()}\n\n{text}"
     if png:
-        await bot.send_photo(chat_id=str(ADMIN_ID), photo=BufferedInputFile(png, filename="bruteforce.png"), caption=report)
+        await bot.send_photo(chat_id=str(ADMIN_ID), photo=BufferedInputFile(png, filename="bruteforce.png"), caption=report, parse_mode="HTML")
     else:
         await bot.send_message(chat_id=str(ADMIN_ID), text=report)
 
