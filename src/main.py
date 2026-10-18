@@ -44,11 +44,11 @@ def get_bot_health():
                 ["journalctl", "-u", unit, "-p", "err", "--since", "1 hour ago", "--no-pager"],
                 capture_output=True, text=True, timeout=5,
             ).stdout
-            start = props.get("ExecMainStartTimestamp", "").split()
+            start = " ".join(props.get("ExecMainStartTimestamp", "").split()[1:3])
             errors = len([l for l in errs.splitlines() if "No entries" not in l])
             lines.append(
                 f"🤖 {unit}: {props.get('ActiveState', '?')}"
-                f", up since {start[1] if start else '?'}"
+                f", up since {start or '?'}"
                 f", restarts: {props.get('NRestarts', '?')}"
                 f", errors (1h): {errors}"
             )
