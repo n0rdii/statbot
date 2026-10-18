@@ -26,6 +26,37 @@ bot = Bot(token=str(BOT_TOKEN))
 dp = Dispatcher()
 
 
+def get_bot_health():
+    """Одна строка на каждый tracked-юнит: состояние, аптайм, рестарты, ошибки за час."""
+    lines = []
+    for unit in ("snootsbot",):
+        try:
+            props = {}
+            out = subprocess.run(
+                ["systemctl", "show", unit,
+                 "-p", "ActiveState", "-p", "NRestarts", "-p", "ExecMainStartTimestamp"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout
+            for line in out.splitlines():
+                key, _, val = line.partition("=")
+                props[key] = val
+            errs = subprocess.run(
+                ["journalctl", "-u", unit, "-p", "err", "--since", "1 hour ago", "--no-pager"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout
+            start = props.get("ExecMainStartTimestamp", "").split()
+            errors = len([l for l in errs.splitlines() if "No entries" not in l])
+            lines.append(
+                f"🤖 {unit}: {props.get('ActiveState', '?')}"
+                f", up since {start[1] if start else '?'}"
+                f", restarts: {props.get('NRestarts', '?')}"
+                f", errors (1h): {errors}"
+            )
+        except Exception as e:
+            lines.append(f"🤖 {unit}: check failed ({e})")
+    return "\n".join(lines)
+
+
 def get_server_stats():
     load1, load5, load15 = os.getloadavg()
     mem = psutil.virtual_memory()
@@ -46,7 +77,8 @@ def get_server_stats():
         f"<b>🧠 RAM:</b> {mem.used / (1024 ** 3):.2f}GB / {mem.total / (1024 ** 3):.2f}GB ({mem.percent}%)\n"
         f"<b>💾 Disk:</b> {disk.used / (1024 ** 3):.2f}GB / {disk.total / (1024 ** 3):.2f}GB ({disk.percent}%)\n\n"
         f"🐳 <b>Docker:</b> Running {running_count}\n"
-        f"Names: <code>{container_names}</code>"
+        f"Names: <code>{container_names}</code>\n"
+        f"{get_bot_health()}"
     )
 
 
